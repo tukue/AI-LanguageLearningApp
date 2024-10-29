@@ -1,0 +1,95 @@
+service: language-learning-api
+
+frameworkVersion: '3'
+
+custom:
+  region: ${opt:region, 'eu-west-1'}
+  lessonsTable: ${self:service}-lessons-${sls:stage}
+  progressTable: ${self:service}-progress-${sls:stage}
+
+provider:
+  name: aws
+  runtime: nodejs20.x
+  region: ${self:custom.region}
+  environment:
+    LESSONS_TABLE: ${self:custom.lessonsTable}
+    PROGRESS_TABLE: ${self:custom.progressTable}
+    COGNITO_USER_POOL_ID: ${cf:auth-stack.UserPoolId}
+    COGNITO_CLIENT_ID: ${cf:auth-stack.UserPoolClientId}
+    AWS_REGION: ${self:custom.region}
+
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:DeleteItem
+          Resource:
+            - !GetAtt LessonsTable.Arn
+            - !GetAtt UserProgressTable.Arn
+        - Effect: Allow
+          Action:
+            - translate:TranslateText
+            - polly:SynthesizeSpeech
+          Resource: "*"
+
+functions:
+  login:
+    handler: functions/auth/login.handler
+    events:
+      - http:
+          path: /auth/login
+          method: post
+          cors: true
+
+  getLessons:
+    handler: functions/lessons/getLessons.handler
+    events:
+      - http:
+          path: /lessons
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  getLesson:
+    handler: functions/lessons/getLesson.handler
+    events:
+      - http:
+          path: /lessons/{id}
+          method: get
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  translateText:
+    handler: functions/translate/translateText.handler
+    events:
+      - http:
+          path: /translate
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+  updateProgress:
+    handler: functions/progress/updateProgress.handler
+    events:
+      - http:
+          path: /progress
+          method: post
+          cors: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId: !Ref ApiGatewayAuthorizer
+
+resources:
+  - ${file(dynamodb/tables.yml)}
