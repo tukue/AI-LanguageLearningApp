@@ -2,17 +2,17 @@
 
 ## Project Structure
 ```
-├── src/                  # Frontend NativeScript React app
-├── backend/             # AWS Lambda functions and infrastructure
+├── src/                # Frontend NativeScript React app
+├── backend/            # AWS Lambda functions and infrastructure
 │   ├── auth/           # Cognito authentication stack
 │   ├── functions/      # Lambda functions
 │   └── dynamodb/       # DynamoDB table definitions
 ```
 
 ## Prerequisites
-- Node.js 18.x or later
+- Node.js 20.x or later
 - AWS CLI configured with appropriate credentials
-- Serverless Framework CLI (`npm install -g serverless`)
+- AWS cloudformation 
 
 ## Backend Deployment Steps
 
@@ -25,8 +25,19 @@ serverless deploy --region <your-region>
 2. **Deploy Main Backend Stack**
 ```bash
 cd backend
-serverless deploy --region <your-region>
+aws cloudformation deploy \
+  --template-file auth-stack.yaml \
+  --stack-name auth-stack \
+  --region <region> \
+  --capabilities CAPABILITY_IAM
+
 ```
+aws cloudformation deploy \
+  --template-file backend-stack.yaml \
+  --stack-name backend-stack \
+  --region <region> \
+  --capabilities CAPABILITY_IAM
+
 
 3. **Note the Output Values**
 - API Gateway URL
@@ -38,7 +49,7 @@ serverless deploy --region <your-region>
 1. **Update Environment Variables**
 Create a `.env` file in the project root:
 ```
-AWS_REGION=<your-region>
+AWS_REGION=<region>
 COGNITO_USER_POOL_ID=<user-pool-id>
 COGNITO_CLIENT_ID=<client-id>
 API_GATEWAY_URL=<api-url>

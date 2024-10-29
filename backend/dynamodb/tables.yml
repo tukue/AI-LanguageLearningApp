@@ -1,8 +1,14 @@
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage (e.g., dev, prod)
+
 Resources:
   LessonsTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ${self:custom.lessonsTable}
+      TableName: !Sub ${AWS::StackName}-lessons-${Stage}
       AttributeDefinitions:
         - AttributeName: id
           AttributeType: S
@@ -14,7 +20,7 @@ Resources:
   UserProgressTable:
     Type: AWS::DynamoDB::Table
     Properties:
-      TableName: ${self:custom.progressTable}
+      TableName: !Sub ${AWS::StackName}-progress-${Stage}
       AttributeDefinitions:
         - AttributeName: userId
           AttributeType: S

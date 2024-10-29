@@ -1,95 +1,161 @@
-service: language-learning-api
+AWSTemplateFormatVersion: '2010-09-09'
+Description: CloudFormation template for Language Learning API
 
-frameworkVersion: '3'
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage (e.g., dev, prod)
 
-custom:
-  region: ${opt:region, 'eu-west-1'}
-  lessonsTable: ${self:service}-lessons-${sls:stage}
-  progressTable: ${self:service}-progress-${sls:stage}
+Mappings:
+  StageMap:
+    dev:
+      LessonsTableName: language-learning-api-lessons-dev
+      ProgressTableName: language-learning-api-progress-dev
 
-provider:
-  name: aws
-  runtime: nodejs20.x
-  region: ${self:custom.region}
-  environment:
-    LESSONS_TABLE: ${self:custom.lessonsTable}
-    PROGRESS_TABLE: ${self:custom.progressTable}
-    COGNITO_USER_POOL_ID: ${cf:auth-stack.UserPoolId}
-    COGNITO_CLIENT_ID: ${cf:auth-stack.UserPoolClientId}
-    AWS_REGION: ${self:custom.region}
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                Resource:
+                  - !GetAtt LessonsTable.Arn
+                  - !GetAtt UserProgressTable.Arn
+              - Effect: Allow
+                Action:
+                  - translate:TranslateText
+                  - polly:SynthesizeSpeech
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
 
-  iam:
-    role:
-      statements:
-        - Effect: Allow
-          Action:
-            - dynamodb:Query
-            - dynamodb:Scan
-            - dynamodb:GetItem
-            - dynamodb:PutItem
-            - dynamodb:UpdateItem
-            - dynamodb:DeleteItem
-          Resource:
-            - !GetAtt LessonsTable.Arn
-            - !GetAtt UserProgressTable.Arn
-        - Effect: Allow
-          Action:
-            - translate:TranslateText
-            - polly:SynthesizeSpeech
-          Resource: "*"
+  LessonsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !FindInMap
+        - StageMap
+        - !Ref Stage
+        - LessonsTableName
+      AttributeDefinitions:
+        - AttributeName: id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
 
-functions:
-  login:
-    handler: functions/auth/login.handler
-    events:
-      - http:
-          path: /auth/login
-          method: post
-          cors: true
+  UserProgressTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !FindInMap
+        - StageMap
+        - !Ref Stage
+        - ProgressTableName
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
 
-  getLessons:
-    handler: functions/lessons/getLessons.handler
-    events:
-      - http:
-          path: /lessons
-          method: get
-          cors: true
-          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId: !Ref ApiGatewayAuthorizer
+  LoginFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-login
+      Handler: functions/auth/login.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: your-deployment-bucket
+        S3Key: your-code-package.zip
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          LESSONS_TABLE: !Ref LessonsTable
+          PROGRESS_TABLE: !Ref UserProgressTable
+          COGNITO_USER_POOL_ID: !ImportValue auth-stack:UserPoolId
+          COGNITO_CLIENT_ID: !ImportValue auth-stack:UserPoolClientId
+          AWS_REGION: !Ref AWS::Region
 
-  getLesson:
-    handler: functions/lessons/getLesson.handler
-    events:
-      - http:
-          path: /lessons/{id}
-          method: get
-          cors: true
-          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId: !Ref ApiGatewayAuthorizer
+  GetLessonsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub ${AWS::StackName}-getLessons
+      Handler: functions/lessons/getLessons.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Code:
+        S3Bucket: your-deployment-bucket
+        S3Key: your-code-package.zip
+      Runtime: nodejs20.x
+      Environment:
+        Variables:
+          LESSONS_TABLE: !Ref LessonsTable
+          PROGRESS_TABLE: !Ref UserProgressTable
+          COGNITO_USER_POOL_ID: !ImportValue auth-stack:UserPoolId
+          COGNITO_CLIENT_ID: !ImportValue auth-stack:UserPoolClientId
+          AWS_REGION: !Ref AWS::Region
 
-  translateText:
-    handler: functions/translate/translateText.handler
-    events:
-      - http:
-          path: /translate
-          method: post
-          cors: true
-          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId: !Ref ApiGatewayAuthorizer
+  # Define other Lambda functions (getLesson, translateText, updateProgress) similarly
 
-  updateProgress:
-    handler: functions/progress/updateProgress.handler
-    events:
-      - http:
-          path: /progress
-          method: post
-          cors: true
-          authorizer:
-            type: COGNITO_USER_POOLS
-            authorizerId: !Ref ApiGatewayAuthorizer
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Sub ${AWS::StackName}-api
 
-resources:
-  - ${file(dynamodb/tables.yml)}
+  LoginResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: auth
+
+  LoginMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ApiGateway
+      ResourceId: !Ref LoginResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LoginFunction.Arn}/invocations
+
+  # Define other API Gateway resources and methods for other endpoints
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn:
+      - LoginMethod
+      # Add other method dependencies
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: !Ref Stage
+
+Outputs:
+  ApiUrl:
+    Description: URL of the API Gateway
+    Value: !Sub https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/${Stage}

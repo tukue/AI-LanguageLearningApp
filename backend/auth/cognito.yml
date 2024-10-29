@@ -1,46 +1,44 @@
-service: auth-stack
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudFormation template for Cognito User Pool and Client'
 
-custom:
-  region: ${opt:region, 'us-east-1'}
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Deployment stage (e.g., dev, prod)
 
-provider:
-  name: aws
-  runtime: nodejs18.x
-  region: ${self:custom.region}
+Resources:
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub 'auth-stack-user-pool-${Stage}'
+      AutoVerifiedAttributes:
+        - email
+      Policies:
+        PasswordPolicy:
+          MinimumLength: 8
+          RequireLowercase: true
+          RequireNumbers: true
+          RequireSymbols: true
+          RequireUppercase: true
 
-resources:
-  Resources:
-    UserPool:
-      Type: AWS::Cognito::UserPool
-      Properties:
-        UserPoolName: ${self:service}-user-pool-${sls:stage}
-        AutoVerifiedAttributes:
-          - email
-        Policies:
-          PasswordPolicy:
-            MinimumLength: 8
-            RequireLowercase: true
-            RequireNumbers: true
-            RequireSymbols: true
-            RequireUppercase: true
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub 'auth-stack-client-${Stage}'
+      UserPoolId: !Ref UserPool
+      ExplicitAuthFlows:
+        - ALLOW_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      GenerateSecret: false
 
-    UserPoolClient:
-      Type: AWS::Cognito::UserPoolClient
-      Properties:
-        ClientName: ${self:service}-client-${sls:stage}
-        UserPoolId: !Ref UserPool
-        ExplicitAuthFlows:
-          - ALLOW_USER_PASSWORD_AUTH
-          - ALLOW_REFRESH_TOKEN_AUTH
-        GenerateSecret: false
+Outputs:
+  UserPoolId:
+    Value: !Ref UserPool
+    Export:
+      Name: !Sub 'auth-stack-UserPoolId-${Stage}'
 
-  Outputs:
-    UserPoolId:
-      Value: !Ref UserPool
-      Export:
-        Name: ${self:service}-UserPoolId-${sls:stage}
-
-    UserPoolClientId:
-      Value: !Ref UserPoolClient
-      Export:
-        Name: ${self:service}-UserPoolClientId-${sls:stage}
+  UserPoolClientId:
+    Value: !Ref UserPoolClient
+    Export:
+      Name: !Sub 'auth-stack-UserPoolClientId-${Stage}'
